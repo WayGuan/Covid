@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- 
+    【NEXT STEP】make a selection for different cities 
+    【NEXT】Try datepicker
+-->
 
 <head>
     <meta charset="UTF-8">
@@ -8,13 +12,66 @@
     <title>Document</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.5.1/dist/chart.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.js"></script>
+    <script src="jquery.dateFormat.js"></script>
+    <style>
+        .tooltip {
+            visibility: hidden;
+            position: relative;
+            display: inline-block;
+            margin: 10px;
+        }
+
+        .tooltip .tooltiptext {
+            width: 300px;
+            background-color: black;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 0 15px;
+
+            /* Position the tooltip */
+            position: relative;
+            z-index: 1;
+        }
+    </style>
 </head>
 
 <body>
+    <table>
+        From: <input type="date" name="selectedFromDate" id="selectedFromDate" min="2020-01-25" max=''
+            onchange="chartItOnFromDateChange()">
+        To: <input type="date" name="selectedToDate" id="selectedToDate" min="2020-01-25" max=''
+            onchange="chartItOnToDateChange()">
+    </table>
+    <div class="tooltip">
+        <span class="tooltiptext">From-date can't be later than To-date</span>
+    </div>
     <canvas id="myChart" width="1000" height="400"></canvas>
     <script>
         let xlabels = [];
-        let yvalues = [];
+        let yvaluesHamilton = [];
+        let xlabelsON = [];
+        let yvaluesON = [];
+        var myChart;
+
+        let now = new Date();
+        let day = ("0" + now.getDate()).slice(-2);
+        let month = ("0" + (now.getMonth() + 1)).slice(-2);
+        //input date requires yyyy-MM-dd format
+        let todayInputFormat = now.getFullYear() + "-" + (month) + "-" + (day);
+        // the date faormat get from the API is dd-MM-yyyy
+        let today = (day) + "-" + (month) + "-" + now.getFullYear();
+
+        // set the default date
+        $('#selectedFromDate').val("2020-01-25");
+
+        // set the min for the date range
+        $('#selectedFromDate').attr('min', "2020-01-25");
+        $('#selectedToDate').attr('min', "2020-01-25");
+
+        // // declare selected from and to date
+        let newDateFromFormated = '25-01-2020';
+        let newDateToFormated;
 
         // 【 get data for Hamilton, ON, Canada】
         async function getData() {
@@ -23,40 +80,137 @@
                 const dayData = data['cases'];
                 dayData.forEach(element => {
                     xlabels.push(element['date_report']);
-                    yvalues.push(element['cases']);
+                    yvaluesHamilton.push(element['cases']);
+                });
+            });
+
+            // 【 get data for ON, Canada】
+            await $.getJSON('https://api.opencovid.ca/timeseries?stat=cases&loc=ON', function (data) {
+                // JSON result in `data` variable
+                const dayData = data['cases'];
+                dayData.forEach(element => {
+                    xlabelsON.push(element['date_report']);
+                    yvaluesON.push(element['cases']);
                 });
             });
         }
 
+        // after data is loaded, set the input attributes
+        async function setInputAttr() {
+            await getData();
+            // the last reported available data
+            newDateToFormated = xlabels[xlabels.length - 1];
+            let dateParts = newDateToFormated.split("-");
+            newDateToInputFormated = dateParts[2] + "-" + dateParts[1] + "-" + dateParts[0];
+            // set the max for the date range based on the last reported available data
+            $('#selectedFromDate').attr('max', newDateToInputFormated);
+            $('#selectedToDate').attr('max', newDateToInputFormated);
+            $('#selectedToDate').val(newDateToInputFormated);
+        };
+
+        setInputAttr();
         chartIt();
         async function chartIt() {
+            // reset the arrays
+            xlabels = [];
+            yvaluesHamilton = [];
+            yvaluesON = [];
             await getData();
+
+            // get the selected date, pay attention to the date format
+            // format the dateFrom date
+            let dateFrom = $('#selectedFromDate').val();
+
+            let newDateFrom = new Date(dateFrom);
+            // adjust the timezone, using getTime to get the number format, using the getTimezoneOffset in milliseconds
+            let timeOffsetDateFrom = newDateFrom.getTimezoneOffset();
+            newDateFrom = new Date(newDateFrom.getTime() + timeOffsetDateFrom * 60 * 1000);
+
+            let dayFrom = ("0" + newDateFrom.getDate()).slice(-2);
+            let monthFrom = ("0" + (newDateFrom.getMonth() + 1)).slice(-2);
+
+            newDateFromFormated = (dayFrom) + "-" + (monthFrom) + "-" + newDateFrom.getFullYear();
+
+            if ($('#selectedToDate').val()) {
+
+                // get the selected date, pay attention to the date format
+                // format the dateTo date
+                let dateTo = $('#selectedToDate').val();
+
+                let newDateTo = new Date(dateTo);
+                // adjust the timezone, using getTime to get the number format, using the getTimezoneOffset in milliseconds
+                let timeOffsetDateTo = newDateTo.getTimezoneOffset();
+                newDateTo = new Date(newDateTo.getTime() + timeOffsetDateTo * 60 * 1000);
+
+                let dayTo = ("0" + newDateTo.getDate()).slice(-2);
+                let monthTo = ("0" + (newDateTo.getMonth() + 1)).slice(-2);
+
+                newDateToFormated = (dayTo) + "-" + (monthTo) + "-" + newDateTo.getFullYear();
+                // console.log('new Date To Formated' + newDateToFormated); // DEBUG                 
+            }
+            // console.log(newDateFromFormated); // DEBUG
+            // console.log("from input change event: " + newDateToFormated); // DEBUG
+            let labelsStartDateIndex = xlabels.indexOf(newDateFromFormated);
+            let labelsEndDateIndex = xlabels.indexOf(newDateToFormated);
+            let SelectedXlabels = xlabels.slice(labelsStartDateIndex, labelsEndDateIndex + 1);
+            let selectedYvaluesHamilton = yvaluesHamilton.slice(labelsStartDateIndex, labelsEndDateIndex + 1);
+            let selectedYvaluesON = yvaluesON.slice(labelsStartDateIndex, labelsEndDateIndex + 1);
+            // console.log("Start Index: " + labelsStartDateIndex); // DEBUG
+            // console.log("End Index: " + labelsEndDateIndex); // DEBUG
+            // console.log(xlabels); // DEBUG
+
+
             var ctx = document.getElementById('myChart').getContext('2d');
-            var myChart = new Chart(ctx, {
-                type: 'bar', // type: bar, line
+            myChart = new Chart(ctx, {
+                type: 'bar', // type: bar, line, scatter, bubble, pie, radar
                 data: {
-                    labels: xlabels,
-                    datasets: [{
-                        label: '# of Cases in Hamilton',
-                        data: yvalues,
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 1)',
-                            'rgba(54, 162, 235, 1)',
-                            'rgba(255, 206, 86, 1)',
-                            'rgba(75, 192, 192, 1)',
-                            'rgba(153, 102, 255, 1)',
-                            'rgba(255, 159, 64, 1)'
-                        ],
-                        // borderColor: [
-                        //     'rgba(255, 99, 132, 1)',
-                        //     'rgba(54, 162, 235, 1)',
-                        //     'rgba(255, 206, 86, 1)',
-                        //     'rgba(75, 192, 192, 1)',
-                        //     'rgba(153, 102, 255, 1)',
-                        //     'rgba(255, 159, 64, 1)'
-                        // ],
-                        // borderWidth: 1
-                    }]
+                    labels: SelectedXlabels,
+                    // labels: [xlabels, xlabelsON],
+                    datasets: [
+                        {
+                            label: '# of Cases in Hamilton',
+                            data: selectedYvaluesHamilton,
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 1)',
+                                'rgba(54, 162, 235, 1)',
+                                'rgba(255, 206, 86, 1)',
+                                'rgba(75, 192, 192, 1)',
+                                'rgba(153, 102, 255, 1)',
+                                'rgba(255, 159, 64, 1)'
+                            ],
+                            // borderColor: [
+                            //     'rgba(255, 99, 132, 1)',
+                            //     'rgba(54, 162, 235, 1)',
+                            //     'rgba(255, 206, 86, 1)',
+                            //     'rgba(75, 192, 192, 1)',
+                            //     'rgba(153, 102, 255, 1)',
+                            //     'rgba(255, 159, 64, 1)'
+                            // ],
+                            // borderWidth: 1
+                        },
+                        {
+                            label: '# of Cases in Ontario',
+                            data: selectedYvaluesON,
+                            type: 'line',
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 1)',
+                                'rgba(54, 162, 235, 1)',
+                                'rgba(255, 206, 86, 1)',
+                                'rgba(75, 192, 192, 1)',
+                                'rgba(153, 102, 255, 1)',
+                                'rgba(255, 159, 64, 1)'
+                            ],
+                            // borderColor: [
+                            //     'rgba(255, 99, 132, 1)',
+                            //     'rgba(54, 162, 235, 1)',
+                            //     'rgba(255, 206, 86, 1)',
+                            //     'rgba(75, 192, 192, 1)',
+                            //     'rgba(153, 102, 255, 1)',
+                            //     'rgba(255, 159, 64, 1)'
+                            // ],
+                            // borderWidth: 1
+                        }
+                    ]
                 },
                 options: {
                     scales: {
@@ -66,12 +220,70 @@
                         y: {
                             beginAtZero: true
                         }
+                    },
+
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Covid status in Hamilton and Ontario',
+                            padding: {
+                                top: 10,
+                                bottom: 30
+                            }
+                        }
                     }
                 }
             });
         }
-                
+
+        // From-date onchange event
+        function chartItOnFromDateChange() {
+            if ($('#selectedFromDate').val() > $('#selectedToDate').val()) {
+                $('.tooltip').css('visibility', 'visible');
+            }
+            else {
+                $('.tooltip').css('visibility', 'hidden');
+                // destroy the previous chart
+                myChart.destroy();
+                chartIt();
+            }
+        };
+
+        // To-date onchange event
+        function chartItOnToDateChange() {
+            if ($('#selectedFromDate').val() > $('#selectedToDate').val()) {
+                $('.tooltip').css('visibility', 'visible');
+            }
+            else {
+                $('.tooltip').css('visibility', 'hidden');
+                // destroy the previous chart
+                myChart.destroy();
+                chartIt();
+            }
+        };
     </script>
+
+    <hr>
+    <h2>
+        COVID Assessment
+    </h2>
+    <h3>
+        Are you experiencing any of these symptoms? (new, worsening, and not related to other known causes or
+        conditions)
+    </h3>
+    <ul>
+        <li>Fever / chills</li>
+        <li>Cough</li>
+        <li>Shortness of breath</li>
+        <li>Decreased sense of smell / taste</li>
+        <li>Sore throat</li>
+        <li>Stuffy / runny nose</li>
+        <li>Headache</li>
+        <li>Nausea / vomiting / diarrhea</li>
+        <li>Fatigue / lethargy / muscle aches</li>
+        <li>Pink eye (Conjunctivitis) not related to other known causes or conditions (e.g., blepharitis, recurrent
+            styes)</li>
+    </ul>
 
 </body>
 
